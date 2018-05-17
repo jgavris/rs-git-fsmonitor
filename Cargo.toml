@@ -1,0 +1,9 @@
+[package]
+name = "rs-git-fsmonitor"
+version = "0.1.0"
+authors = ["Jason Gavris <jgavris@gmail.com>"]
+
+[dependencies]
+serde = "1.0"
+serde_json = "1.0"
+
