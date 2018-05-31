@@ -4,6 +4,9 @@ A git fsmonitor hook written in Rust.
 
 ## Installation
 
+Before you can use this tool, you will need [watchman](https://facebook.github.io/watchman/docs/install.html) installed.
+If you are on OS X, `brew` install will install it for you.
+
 Install the tool:
 
 `brew tap jgavris/rs-git-fsmonitor git@github.com:jgavris/rs-git-fsmonitor.git && brew install rs-git-fsmonitor`
