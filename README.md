@@ -6,7 +6,7 @@ A git fsmonitor hook written in Rust.
 
 Install the tool:
 
-`brew tap jgavris/rs-git-fsmonitor git@github.com:jgavris/rs-git-fsmonitor.git && brew install rs-git-fsmonitor`
+`brew tap jgavris/rs-git-fsmonitor https://github.com/jgavris/rs-git-fsmonitor.git && brew install rs-git-fsmonitor`
 
 Configure git repository to use the tool (run in desired large git repository):
 
