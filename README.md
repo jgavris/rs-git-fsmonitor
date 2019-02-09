@@ -4,13 +4,27 @@ A git fsmonitor hook written in Rust.
 
 ## Installation
 
-Install the tool:
+### Via Homebrew
 
-`brew tap jgavris/rs-git-fsmonitor https://github.com/jgavris/rs-git-fsmonitor.git && brew install rs-git-fsmonitor`
+[Homebrew](https://brew.sh/) is the recommended way to install in Mac environments:
 
-Configure git repository to use the tool (run in desired large git repository):
+```bash
+brew tap jgavris/rs-git-fsmonitor https://github.com/jgavris/rs-git-fsmonitor.git && brew install rs-git-fsmonitor
 
-`git config core.fsmonitor rs-git-fsmonitor`
+# Configure git repository to use the tool (run in desired large git repository):
+git config core.fsmonitor rs-git-fsmonitor
+```
+
+### Via Habitat
+
+[Habitat](https://habitat.sh) is the recommended way to install in Linux environments: 
+
+```bash
+hab pkg install jgavris/rs-git-fsmonitor
+
+# Configure git repository to use the tool (run in desired large git repository):
+git config --global core.fsmonitor "$(hab pkg path jgavris/rs-git-fsmonitor)/bin/rs-git-fsmonitor"
+```
 
 ## Purpose
 
