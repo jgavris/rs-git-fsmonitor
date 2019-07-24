@@ -2,12 +2,7 @@ use std::env;
 use std::io::{self, Error, ErrorKind, Write};
 use std::process::{exit, Command, Stdio};
 
-extern crate serde;
-
-#[macro_use]
-extern crate serde_json;
-
-use serde_json::Value;
+use serde_json::{json, Value};
 
 fn main() {
     query_watchman().unwrap_or_else(|e| {
@@ -80,7 +75,7 @@ fn query_watchman() -> io::Result<()> {
 
             Ok(())
         }
-        None => Err(Error::new(ErrorKind::Other, "missing file data")),
+        None => Err(Error::new(ErrorKind::Other, "missing file data"))
     }
 }
 
