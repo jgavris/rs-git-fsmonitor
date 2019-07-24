@@ -29,7 +29,7 @@ fn query_watchman() -> io::Result<()> {
         let args: Vec<String> = env::args().collect();
         let time = &args[2];
         let time_nanoseconds: u64 = time.parse::<u64>().unwrap();
-        let time_seconds = time_nanoseconds / 1000000000;
+        let time_seconds = time_nanoseconds / 1_000_000_000;
 
         let watchman_query = json!(
             [
@@ -66,38 +66,33 @@ fn query_watchman() -> io::Result<()> {
 
     let response: Value = serde_json::from_str(String::from_utf8(output).unwrap().as_str())?;
 
-    match response["error"].as_str() {
-        Some(_) => return add_to_watchman(git_work_tree),
-        None => {}
+    if response["error"].as_str().is_some() {
+        return add_to_watchman(&git_work_tree);
     }
 
     match response["files"].as_array() {
         Some(files) => {
             for file in files {
-                match file.as_str() {
-                    Some(filename) => print!("{}\0", filename),
-                    None => {}
+                if let Some(filename) = file.as_str() {
+                    print!("{}\0", filename);
                 }
             }
 
-            return Ok(());
+            Ok(())
         }
-        None => return Err(Error::new(ErrorKind::Other, "missing file data")),
+        None => Err(Error::new(ErrorKind::Other, "missing file data")),
     }
 }
 
-fn add_to_watchman(worktree: std::path::PathBuf) -> io::Result<()> {
+fn add_to_watchman(worktree: &std::path::Path) -> io::Result<()> {
     let watchman = Command::new("watchman")
         .args(&["watch", worktree.to_str().unwrap()])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()?;
 
-    match watchman.wait_with_output() {
-        Ok(_) => {
-            print!("\0");
-            return Ok(());
-        }
-        Err(e) => return Err(e),
-    }
+    let output = watchman.wait_with_output()?;
+    assert!(output.status.success());
+    print!("\0");
+    Ok(())
 }
