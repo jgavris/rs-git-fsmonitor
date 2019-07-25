@@ -61,7 +61,8 @@ fn query_watchman() -> io::Result<()> {
 
     let response: Value = serde_json::from_str(String::from_utf8(output).unwrap().as_str())?;
 
-    if response["error"].as_str().is_some() {
+    if let Some(err) = response["error"].as_str() {
+        assert!(err.contains("unable to resolve root"));
         return add_to_watchman(&git_work_tree);
     }
 
