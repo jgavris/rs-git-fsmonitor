@@ -89,6 +89,12 @@ fn add_to_watchman(worktree: &std::path::Path) -> io::Result<()> {
 
     let output = watchman.wait_with_output()?;
     assert!(output.status.success());
-    print!("\0");
+
+    // Return the fast "everything is dirty" indication to Git.
+    // This makes subsequent queries much faster since Git will pass Watchman
+    // a timestamp from _after_ it started.
+    // (When Watchman gets a time before its run,
+    // it conservatively says everything has changed.)
+    print!("/\0");
     Ok(())
 }
