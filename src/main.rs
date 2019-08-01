@@ -19,7 +19,7 @@ fn query_watchman() -> Fallible<()> {
         .args(&["-j", "--no-pretty"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn()?;
+        .spawn().context("Couldn't start watchman")?;
 
     {
         let args: Vec<String> = env::args().collect();
@@ -101,7 +101,7 @@ fn add_to_watchman(worktree: &std::path::Path) -> Fallible<()> {
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn()?;
+        .spawn().context("Couldn't start watchman watch")?;
 
     let output = watchman.wait_with_output()?;
     ensure!(output.status.success(), "`watchman watch` failed");
