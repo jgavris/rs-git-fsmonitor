@@ -92,6 +92,8 @@ fn query_watchman() -> Fallible<()> {
 }
 
 fn add_to_watchman(worktree: &std::path::Path) -> Fallible<()> {
+    eprintln!("Adding {} to Watchman's watch list", worktree.display());
+
     let watchman = Command::new("watchman")
         .args(&[
             "watch",
