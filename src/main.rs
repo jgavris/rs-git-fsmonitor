@@ -19,7 +19,8 @@ fn query_watchman() -> Fallible<()> {
         .args(&["-j", "--no-pretty"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn().context("Couldn't start watchman")?;
+        .spawn()
+        .context("Couldn't start watchman")?;
 
     {
         let args: Vec<String> = env::args().collect();
@@ -60,7 +61,10 @@ fn query_watchman() -> Fallible<()> {
             .write_all(watchman_query.to_string().as_bytes())?;
     }
 
-    let output = watchman.wait_with_output()?.stdout;
+    let output = watchman
+        .wait_with_output()
+        .context("Failed to wait on watchman query")?
+        .stdout;
 
     let response: Value = serde_json::from_str(
         String::from_utf8(output)
@@ -103,9 +107,12 @@ fn add_to_watchman(worktree: &std::path::Path) -> Fallible<()> {
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn().context("Couldn't start watchman watch")?;
+        .spawn()
+        .context("Couldn't start watchman watch")?;
 
-    let output = watchman.wait_with_output()?;
+    let output = watchman
+        .wait_with_output()
+        .context("Failed to wait on `watchman watch`")?;
     ensure!(output.status.success(), "`watchman watch` failed");
 
     // Return the fast "everything is dirty" indication to Git.
