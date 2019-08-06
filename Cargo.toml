@@ -1,6 +1,6 @@
 [package]
 name = "rs-git-fsmonitor"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Jason Gavris <jgavris@gmail.com>", "Matt Kline <matt@bitbashing.io>"]
 edition = "2018"
 

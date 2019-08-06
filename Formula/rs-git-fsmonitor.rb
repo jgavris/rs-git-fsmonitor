@@ -2,8 +2,8 @@ class RsGitFsmonitor < Formula
   desc "Git fsmonitor hook written in Rust"
   homepage "https://github.com/jgavris/rs-git-fsmonitor"
 
-  url "https://github.com/jgavris/rs-git-fsmonitor/releases/download/v0.1.1/rs-git-fsmonitor"
-  sha256 "4faf1723ea75a76e0dd6187d5a3e9074fd5e93dd13f1024843d4ed256ff689e8"
+  url "https://github.com/jgavris/rs-git-fsmonitor/releases/download/v0.1.2/rs-git-fsmonitor"
+  sha256 "69321d0b40b9adcc10b495190d63096e51c6506b2d94bc27395848223a06bf21"
 
   depends_on "watchman"
 
