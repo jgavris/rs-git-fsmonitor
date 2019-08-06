@@ -1,29 +1,33 @@
 use std::env;
-use std::io::{self, Error, ErrorKind, Write};
+use std::io::Write;
 use std::process::{exit, Command, Stdio};
 
+use failure::*;
 use serde_json::{json, Value};
 
 fn main() {
     query_watchman().unwrap_or_else(|e| {
-        eprintln!("{}", e);
+        eprintln!("{}", pretty_error(&e));
         exit(1);
     })
 }
 
-fn query_watchman() -> io::Result<()> {
-    let git_work_tree = env::current_dir().unwrap();
+fn query_watchman() -> Fallible<()> {
+    let git_work_tree = env::current_dir().context("Couldn't get working directory")?;
 
     let mut watchman = Command::new("watchman")
         .args(&["-j", "--no-pretty"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn()?;
+        .spawn()
+        .context("Couldn't start watchman")?;
 
     {
         let args: Vec<String> = env::args().collect();
         let time = &args[2];
-        let time_nanoseconds: u64 = time.parse::<u64>().unwrap();
+        let time_nanoseconds: u64 = time
+            .parse::<u64>()
+            .context("Second arg wasn't an integer")?;
         let time_seconds = time_nanoseconds / 1_000_000_000;
 
         let watchman_query = json!(
@@ -53,16 +57,27 @@ fn query_watchman() -> io::Result<()> {
         watchman
             .stdin
             .as_mut()
-            .unwrap()
+            .expect("child Watchman process's stdin isn't piped")
             .write_all(watchman_query.to_string().as_bytes())?;
     }
 
-    let output = watchman.wait_with_output()?.stdout;
+    let output = watchman
+        .wait_with_output()
+        .context("Failed to wait on watchman query")?
+        .stdout;
 
-    let response: Value = serde_json::from_str(String::from_utf8(output).unwrap().as_str())?;
+    let response: Value = serde_json::from_str(
+        String::from_utf8(output)
+            .context("Watchman didn't return valid JSON")?
+            .as_str(),
+    )?;
 
     if let Some(err) = response["error"].as_str() {
-        assert!(err.contains("unable to resolve root"));
+        ensure!(
+            err.contains("unable to resolve root"),
+            "Watchman failed for an unexpected reason {}",
+            err
+        );
         return add_to_watchman(&git_work_tree);
     }
 
@@ -76,19 +91,29 @@ fn query_watchman() -> io::Result<()> {
 
             Ok(())
         }
-        None => Err(Error::new(ErrorKind::Other, "missing file data"))
+        None => bail!("missing file data"),
     }
 }
 
-fn add_to_watchman(worktree: &std::path::Path) -> io::Result<()> {
+fn add_to_watchman(worktree: &std::path::Path) -> Fallible<()> {
+    eprintln!("Adding {} to Watchman's watch list", worktree.display());
+
     let watchman = Command::new("watchman")
-        .args(&["watch", worktree.to_str().unwrap()])
+        .args(&[
+            "watch",
+            worktree
+                .to_str()
+                .expect("Working directory isn't valid Unicode"),
+        ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn()?;
+        .spawn()
+        .context("Couldn't start watchman watch")?;
 
-    let output = watchman.wait_with_output()?;
-    assert!(output.status.success());
+    let output = watchman
+        .wait_with_output()
+        .context("Failed to wait on `watchman watch`")?;
+    ensure!(output.status.success(), "`watchman watch` failed");
 
     // Return the fast "everything is dirty" indication to Git.
     // This makes subsequent queries much faster since Git will pass Watchman
@@ -97,4 +122,34 @@ fn add_to_watchman(worktree: &std::path::Path) -> io::Result<()> {
     // it conservatively says everything has changed.)
     print!("/\0");
     Ok(())
+}
+
+// Borrowed lovingly from Burntsushi:
+// https://www.reddit.com/r/rust/comments/8fecqy/can_someone_show_an_example_of_failure_crate_usage/dy2u9q6/
+// Chains errors into a big string.
+fn pretty_error(err: &failure::Error) -> String {
+    let mut pretty = err.to_string();
+    let mut prev = err.as_fail();
+    while let Some(next) = prev.cause() {
+        pretty.push_str(":\n");
+        pretty.push_str(&next.to_string());
+        if let Some(bt) = next.backtrace() {
+            let mut bts = bt.to_string();
+            // If RUST_BACKTRACE is not set, next.backtrace() gives us
+            // Some(bt), but bt.to_string() gives us an empty string.
+            // If we push a newline to the return value and nothing else,
+            // we get something like:
+            // ```
+            // Some errror
+            // :
+            // Its cause
+            // ```
+            if !bts.is_empty() {
+                bts.push_str("\n");
+                pretty.push_str(&bts);
+            }
+        }
+        prev = next;
+    }
+    pretty
 }
