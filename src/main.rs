@@ -2,39 +2,33 @@ use std::env;
 use std::io::Write;
 use std::process::{exit, Command, Stdio};
 
-use clap::{App, Arg};
 use failure::*;
 use serde_json::{json, Value};
+use structopt::StructOpt;
+
+#[derive(Debug, StructOpt)]
+#[structopt(
+    name = "rs-git-fsmonitor",
+    about = "Git fsmonitor hook in Rust\nhttps://git-scm.com/docs/githooks#_fsmonitor_watchman",
+)]
+struct Opt {
+    /// The version of the interface
+    version: u64,
+
+    /// The number of nanoseconds since the epoch to query
+    epoch_nanoseconds: u64,
+}
 
 fn main() {
-    let matches = App::new("rs-git-fsmonitor")
-        .about("Git fsmonitor hook in Rust\nhttps://git-scm.com/docs/githooks#_fsmonitor_watchman")
-        .arg(
-            Arg::with_name("version")
-                .help("The version of the interface")
-                .required(true)
-                .index(1),
-        )
-        .arg(
-            Arg::with_name("epoch_nanoseconds")
-                .help("The number of nanoseconds since the epoch to query")
-                .required(true)
-                .index(2),
-        )
-        .get_matches();
+    let opt = Opt::from_args();
 
-    let epoch_nanoseconds_string = matches.value_of("epoch_nanoseconds").unwrap_or_else(|| {
-        matches.usage();
-        exit(1)
-    });
-
-    query_watchman(epoch_nanoseconds_string).unwrap_or_else(|e| {
+    query_watchman(opt.epoch_nanoseconds).unwrap_or_else(|e| {
         eprintln!("{}", pretty_error(&e));
         exit(1);
     })
 }
 
-fn query_watchman(epoch_nanoseconds_string: &str) -> Fallible<()> {
+fn query_watchman(epoch_nanoseconds: u64) -> Fallible<()> {
     let git_work_tree = env::current_dir().context("Couldn't get working directory")?;
 
     let mut watchman = Command::new("watchman")
@@ -45,9 +39,6 @@ fn query_watchman(epoch_nanoseconds_string: &str) -> Fallible<()> {
         .context("Couldn't start watchman")?;
 
     {
-        let epoch_nanoseconds: u64 = epoch_nanoseconds_string
-            .parse::<u64>()
-            .context("Second arg wasn't an integer")?;
         let time_seconds = epoch_nanoseconds / 1_000_000_000;
 
         let watchman_query = json!(
