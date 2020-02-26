@@ -5,10 +5,10 @@ authors = ["Jason Gavris <jgavris@gmail.com>", "Matt Kline <matt@bitbashing.io>"
 edition = "2018"
 
 [dependencies]
-clap = "2.33.0"
+failure = "0.1"
 serde = "1.0"
 serde_json = "1.0"
-failure = "0.1"
+structopt = "0.3.9"
 
 [profile.dev]
 opt-level = 0
