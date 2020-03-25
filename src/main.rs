@@ -1,18 +1,18 @@
 use std::env;
 use std::io::Write;
-use std::process::{exit, Command, Stdio};
+use std::process::{Command, Stdio};
 
-use failure::*;
+use anyhow::*;
 use serde_json::{json, Value};
 
-fn main() {
-    query_watchman().unwrap_or_else(|e| {
-        eprintln!("{}", pretty_error(&e));
-        exit(1);
+fn main() -> Result<()> {
+    let args: Vec<String> = env::args().collect();
+    query_watchman(&args).with_context(|| {
+        anyhow!("{:?} failed", args)
     })
 }
 
-fn query_watchman() -> Fallible<()> {
+fn query_watchman(args: &[String]) -> Result<()> {
     let git_work_tree = env::current_dir().context("Couldn't get working directory")?;
 
     let mut watchman = Command::new("watchman")
@@ -23,7 +23,6 @@ fn query_watchman() -> Fallible<()> {
         .context("Couldn't start watchman")?;
 
     {
-        let args: Vec<String> = env::args().collect();
         let time = &args[2];
         let time_nanoseconds: u64 = time
             .parse::<u64>()
@@ -95,7 +94,7 @@ fn query_watchman() -> Fallible<()> {
     }
 }
 
-fn add_to_watchman(worktree: &std::path::Path) -> Fallible<()> {
+fn add_to_watchman(worktree: &std::path::Path) -> Result<()> {
     eprintln!("Adding {} to Watchman's watch list", worktree.display());
 
     let watchman = Command::new("watchman")
@@ -122,34 +121,4 @@ fn add_to_watchman(worktree: &std::path::Path) -> Fallible<()> {
     // it conservatively says everything has changed.)
     print!("/\0");
     Ok(())
-}
-
-// Borrowed lovingly from Burntsushi:
-// https://www.reddit.com/r/rust/comments/8fecqy/can_someone_show_an_example_of_failure_crate_usage/dy2u9q6/
-// Chains errors into a big string.
-fn pretty_error(err: &failure::Error) -> String {
-    let mut pretty = err.to_string();
-    let mut prev = err.as_fail();
-    while let Some(next) = prev.cause() {
-        pretty.push_str(":\n");
-        pretty.push_str(&next.to_string());
-        if let Some(bt) = next.backtrace() {
-            let mut bts = bt.to_string();
-            // If RUST_BACKTRACE is not set, next.backtrace() gives us
-            // Some(bt), but bt.to_string() gives us an empty string.
-            // If we push a newline to the return value and nothing else,
-            // we get something like:
-            // ```
-            // Some errror
-            // :
-            // Its cause
-            // ```
-            if !bts.is_empty() {
-                bts.push_str("\n");
-                pretty.push_str(&bts);
-            }
-        }
-        prev = next;
-    }
-    pretty
 }
