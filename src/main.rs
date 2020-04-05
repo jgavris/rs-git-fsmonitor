@@ -9,26 +9,31 @@ use structopt::StructOpt;
 #[derive(Debug, StructOpt)]
 #[structopt(
     name = "rs-git-fsmonitor",
-    about = "Git fsmonitor hook in Rust\nhttps://git-scm.com/docs/githooks#_fsmonitor_watchman",
+    about = "Git fsmonitor hook in Rust\nhttps://git-scm.com/docs/githooks#_fsmonitor_watchman"
 )]
 struct Opt {
     /// The version of the interface
     version: u64,
 
     /// The number of nanoseconds since the epoch to query
-    epoch_nanoseconds: u64,
+    token: String,
 }
 
 fn main() {
     let opt = Opt::from_args();
 
-    query_watchman(opt.epoch_nanoseconds).unwrap_or_else(|e| {
+    if opt.version != 1 && opt.version != 2 {
+        eprintln!("unsupported version");
+        exit(1);
+    }
+
+    query_watchman(opt.version == 2, opt.token).unwrap_or_else(|e| {
         eprintln!("{}", pretty_error(&e));
         exit(1);
     })
 }
 
-fn query_watchman(epoch_nanoseconds: u64) -> Fallible<()> {
+fn query_watchman(is_v2: bool, token: String) -> Fallible<()> {
     let git_work_tree = env::current_dir().context("Couldn't get working directory")?;
 
     let mut watchman = Command::new("watchman")
@@ -39,26 +44,23 @@ fn query_watchman(epoch_nanoseconds: u64) -> Fallible<()> {
         .context("Couldn't start watchman")?;
 
     {
-        let time_seconds = epoch_nanoseconds / 1_000_000_000;
+        // the token following `since` expression can be either epoch second as integer or a clock id as string
+        let epoch_nanoseconds: u64 = token.parse().unwrap_or(0);
+        let mut token_value = Value::from(token);
+        if epoch_nanoseconds != 0 {
+            token_value = Value::from(epoch_nanoseconds / 1_000_000_000);
+        }
 
         let watchman_query = json!(
             [
                 "query",
                 git_work_tree,
                 {
-                    "since": time_seconds,
+                    "since": token_value,
                     "fields": ["name"],
                     "expression": [
                         "not", [
-                            "allof",[
-                                "since",
-                                time_seconds,
-                                "cclock"
-                            ],
-                            [
-                                "not",
-                                "exists"
-                            ]
+                            "dirname", ".git"
                         ]
                     ]
                 }
@@ -94,6 +96,9 @@ fn query_watchman(epoch_nanoseconds: u64) -> Fallible<()> {
 
     match response["files"].as_array() {
         Some(files) => {
+            if is_v2 {
+                print!("{}\0", response["clock"].as_str().unwrap_or(""));
+            }
             for file in files {
                 if let Some(filename) = file.as_str() {
                     print!("{}\0", filename);
