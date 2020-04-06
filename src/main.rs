@@ -15,7 +15,7 @@ struct Opt {
     /// The version of the interface
     version: u64,
 
-    /// The number of nanoseconds since the epoch to query
+    /// Watchman clockspec, it can be epoch second or clock id
     token: String,
 }
 
@@ -45,27 +45,17 @@ fn query_watchman(is_v2: bool, token: String) -> Fallible<()> {
 
     {
         // the token following `since` expression can be either epoch second as integer or a clock id as string
-        let epoch_nanoseconds: u64 = token.parse().unwrap_or(0);
+        let epoch_seconds: u64 = token.parse().unwrap_or(0) / 1_000_000_000;
         let mut token_value = Value::from(token);
-        if epoch_nanoseconds != 0 {
-            token_value = Value::from(epoch_nanoseconds / 1_000_000_000);
+        if epoch_seconds != 0 {
+            token_value = Value::from(epoch_seconds);
         }
 
-        let watchman_query = json!(
-            [
-                "query",
-                git_work_tree,
-                {
-                    "since": token_value,
-                    "fields": ["name"],
-                    "expression": [
-                        "not", [
-                            "dirname", ".git"
-                        ]
-                    ]
-                }
-            ]
-        );
+        let watchman_query = if is_v2 {
+            get_watchman_query_v2(&git_work_tree, token_value)
+        } else {
+            get_watchman_query_v1(&git_work_tree, epoch_seconds)
+        };
 
         watchman
             .stdin
@@ -168,4 +158,48 @@ fn pretty_error(err: &failure::Error) -> String {
         prev = next;
     }
     pretty
+}
+
+fn get_watchman_query_v1(git_work_tree: &std::path::Path, time_seconds: u64) -> Value {
+    json!(
+         [
+             "query",
+             git_work_tree,
+             {
+                 "since": time_seconds,
+                 "fields": ["name"],
+                 "expression": [
+                     "not", [
+                         "allof",[
+                             "since",
+                             time_seconds,
+                             "cclock"
+                         ],
+                         [
+                             "not",
+                             "exists"
+                         ]
+                     ]
+                 ]
+             }
+        ]
+    )
+}
+
+fn get_watchman_query_v2(git_work_tree: &std::path::Path, token: Value) -> Value {
+    json!(
+        [
+            "query",
+            git_work_tree,
+            {
+                "since": token,
+                "fields": ["name"],
+                "expression": [
+                    "not", [
+                        "dirname", ".git"
+                    ]
+                ]
+            }
+        ]
+    )
 }
