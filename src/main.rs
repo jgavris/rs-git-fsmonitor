@@ -44,17 +44,10 @@ fn query_watchman(is_v2: bool, token: String) -> Fallible<()> {
         .context("Couldn't start watchman")?;
 
     {
-        // the token following `since` expression can be either epoch second as integer or a clock id as string
-        let epoch_seconds: u64 = token.parse().unwrap_or(0) / 1_000_000_000;
-        let mut token_value = Value::from(token);
-        if epoch_seconds != 0 {
-            token_value = Value::from(epoch_seconds);
-        }
-
         let watchman_query = if is_v2 {
-            get_watchman_query_v2(&git_work_tree, token_value)
+            get_watchman_query_v2(&git_work_tree, token)
         } else {
-            get_watchman_query_v1(&git_work_tree, epoch_seconds)
+            get_watchman_query_v1(&git_work_tree, token)
         };
 
         watchman
@@ -160,19 +153,20 @@ fn pretty_error(err: &failure::Error) -> String {
     pretty
 }
 
-fn get_watchman_query_v1(git_work_tree: &std::path::Path, time_seconds: u64) -> Value {
+fn get_watchman_query_v1(git_work_tree: &std::path::Path, token: String) -> Value {
+    let epoch_seconds: u64 = token.parse().unwrap_or(0) / 1_000_000_000;
     json!(
          [
              "query",
              git_work_tree,
              {
-                 "since": time_seconds,
+                 "since": epoch_seconds,
                  "fields": ["name"],
                  "expression": [
                      "not", [
                          "allof",[
                              "since",
-                             time_seconds,
+                             epoch_seconds,
                              "cclock"
                          ],
                          [
@@ -186,13 +180,19 @@ fn get_watchman_query_v1(git_work_tree: &std::path::Path, time_seconds: u64) -> 
     )
 }
 
-fn get_watchman_query_v2(git_work_tree: &std::path::Path, token: Value) -> Value {
+fn get_watchman_query_v2(git_work_tree: &std::path::Path, token: String) -> Value {
+    // the token following `since` expression can be either epoch second as integer or a clock id as string
+    let token_value = if let Some('c') = token.chars().next() {
+        Value::from(token)
+    } else {
+        Value::from(token.parse::<u64>().unwrap_or(0) / 1_000_000_000)
+    };
     json!(
         [
             "query",
             git_work_tree,
             {
-                "since": token,
+                "since": token_value,
                 "fields": ["name"],
                 "expression": [
                     "not", [
