@@ -17,13 +17,20 @@ git config core.fsmonitor rs-git-fsmonitor
 
 ### Via Habitat
 
-[Habitat](https://habitat.sh) is the recommended way to install in Linux environments: 
+[Habitat](https://habitat.sh) is the recommended way to install in Linux environments:
 
 ```bash
-hab pkg install jgavris/rs-git-fsmonitor
+# Install and link packages
+sudo hab pkg install jgavris/rs-git-fsmonitor
+sudo hab pkg binlink jgavris/rs-git-fsmonitor
+sudo hab pkg binlink jarvus/watchman
+
+# Ensure service directory exists and is writable
+sudo mkdir -p /hab/svc/watchman/var
+sudo chmod o+rwx /hab/svc/watchman/var
 
 # Configure git repository to use the tool (run in desired large git repository):
-git config --global core.fsmonitor "$(hab pkg path jgavris/rs-git-fsmonitor)/bin/rs-git-fsmonitor"
+git config --global core.fsmonitor rs-git-fsmonitor
 ```
 
 ## Purpose
