@@ -1,6 +1,6 @@
 pkg_name=rs-git-fsmonitor
 pkg_origin=jgavris
-pkg_version="0.1.1"
+pkg_version="0.1.3"
 pkg_maintainer="Jason Gavris <jgavris@gmail.com>"
 pkg_license=("MIT")
 pkg_upstream_url="https://github.com/jgavris/rs-git-fsmonitor"
