@@ -1,95 +1,192 @@
 use std::env;
+use std::ffi::OsStr;
 use std::io::Write;
-use std::process::{exit, Command, Stdio};
+use std::path::Path;
+use std::process::{Command, Stdio};
 
-use failure::*;
+use anyhow::*;
 use serde_json::{json, Value};
-use structopt::StructOpt;
 
-#[derive(Debug, StructOpt)]
-#[structopt(
-    name = "rs-git-fsmonitor",
-    about = "Git fsmonitor hook in Rust\nhttps://git-scm.com/docs/githooks#_fsmonitor_watchman",
-)]
-struct Opt {
-    /// The version of the interface
-    version: u64,
-
-    /// The number of nanoseconds since the epoch to query
-    epoch_nanoseconds: u64,
-}
-
-fn main() {
-    let opt = Opt::from_args();
-
-    query_watchman(opt.epoch_nanoseconds).unwrap_or_else(|e| {
-        eprintln!("{}", pretty_error(&e));
-        exit(1);
-    })
-}
-
-fn query_watchman(epoch_nanoseconds: u64) -> Fallible<()> {
-    let git_work_tree = env::current_dir().context("Couldn't get working directory")?;
-
-    let mut watchman = Command::new("watchman")
-        .args(&["-j", "--no-pretty"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .context("Couldn't start watchman")?;
-
-    {
-        let time_seconds = epoch_nanoseconds / 1_000_000_000;
-
-        let watchman_query = json!(
-            [
-                "query",
-                git_work_tree,
-                {
-                    "since": time_seconds,
-                    "fields": ["name"],
-                    "expression": [
-                        "not", [
-                            "allof",[
-                                "since",
-                                time_seconds,
-                                "cclock"
-                            ],
-                            [
-                                "not",
-                                "exists"
-                            ]
-                        ]
-                    ]
-                }
-            ]
-        );
-
-        watchman
-            .stdin
-            .as_mut()
-            .expect("child Watchman process's stdin isn't piped")
-            .write_all(watchman_query.to_string().as_bytes())?;
+fn main() -> Result<()> {
+    let args: Vec<String> = env::args().collect();
+    if args.len() != 3 {
+        bail!("Expected two arguments, got {:?}", &args[1..]);
     }
+    let hook_version = args[1]
+        .parse::<isize>()
+        .context("First arg wasn't a version number")?;
 
-    let output = watchman
-        .wait_with_output()
-        .context("Failed to wait on watchman query")?
-        .stdout;
+    match hook_version {
+        1 => query_watchman_v1(&args),
+        2 => query_watchman_v2(&args),
+        _ => bail!(
+            "Unsupported fsmonitor-watchman hook version: {}",
+            hook_version
+        ),
+    }
+}
 
-    let response: Value = serde_json::from_str(
-        String::from_utf8(output)
-            .context("Watchman didn't return valid JSON")?
-            .as_str(),
-    )?;
+/// V2 of the API takes a clock token from `watchman clock`,
+/// and asks watchman what files have changed since the provided time.
+fn query_watchman_v2(args: &[String]) -> Result<()> {
+    let worktree = env::current_dir().context("Couldn't get working directory")?;
+
+    let last_update_token = &args[2];
+
+    // From the Perl that ships with Git:
+    //
+    // In the query expression below we're asking for names of files that
+    // changed since $last_update_token but not from the .git folder.
+    //
+    // To accomplish this, we're using the "since" generator to use the
+    // recency index to select candidate nodes and "fields" to limit the
+    // output to file names only. Then we're using the "expression" term to
+    // further constrain the results.
+    let response = watchman_query(&json!(
+        [
+            "query",
+            worktree,
+            {
+                "since": last_update_token,
+                "fields": ["name"],
+                "expression": [
+                    "not", [
+                        "dirname",
+                        ".git"
+                    ]
+                ]
+            }
+        ]
+    ))?;
 
     if let Some(err) = response["error"].as_str() {
         ensure!(
-            err.contains("unable to resolve root"),
+            err.contains("unable to resolve root") || err.contains("is not watched"),
             "Watchman failed for an unexpected reason {}",
             err
         );
-        return add_to_watchman(&git_work_tree);
+
+        // Start a watch, then get the clock ID.
+        add_watch(&worktree)?;
+        let clock_id = watchman_clock(&worktree)?;
+
+        // Return the fast "everything is dirty" indication to Git.
+        // This makes subsequent queries much faster since Git will pass Watchman
+        // a timestamp from _after_ it started.
+        // (When Watchman gets a time before its run,
+        // it conservatively says everything has changed.)
+        print!("{}\0/\0", clock_id);
+        return Ok(());
+    }
+
+    let new_clock_id = response["clock"]
+        .as_str()
+        .ok_or_else(|| anyhow!("Missing new clock ID in watchman response {:#}", response))?;
+
+    match response["files"].as_array() {
+        Some(files) => {
+            print!("{}\0", new_clock_id);
+            for file in files {
+                if let Some(filename) = file.as_str() {
+                    print!("{}\0", filename);
+                }
+            }
+
+            Ok(())
+        }
+        None => bail!("Missing file data in watchman response {:#}", response),
+    }
+}
+
+/// Calls `watchman clock` on the Git directory and returns the provided ID.
+fn watchman_clock(worktree: &Path) -> Result<String> {
+    let watchman = Command::new("watchman")
+        .args(&[OsStr::new("clock"), worktree.as_os_str()])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .context("Couldn't start `watchman clock`")?;
+
+    let output = watchman
+        .wait_with_output()
+        .context("Failed to wait on `watchman clock`")?
+        .stdout;
+
+    let response: Value = serde_json::from_str(std::str::from_utf8(&output)?)?;
+
+    if let Some(clock_id) = response["clock"].as_str() {
+        Ok(String::from(clock_id))
+    } else {
+        Err(anyhow!(
+            "`watchman clock` didn't provide a clock ID in response {:#}",
+            response
+        ))
+    }
+}
+
+/// V1 of the API takes a time of elapsed nanoseconds since the POSIX epoch,
+/// and asks watchman what files have changed since the provided time.
+fn query_watchman_v1(args: &[String]) -> Result<()> {
+    let worktree = env::current_dir().context("Couldn't get working directory")?;
+
+    let time = &args[2];
+    let time_nanoseconds: u64 = time
+        .parse::<u64>()
+        .context("Second arg wasn't an integer")?;
+    let time_seconds = time_nanoseconds / 1_000_000_000;
+
+    // From the Perl that ships with Git:
+    //
+    // In the query expression below we're asking for names of files that
+    // changed since $time but were not transient (ie created after
+    // $time but no longer exist).
+    //
+    // To accomplish this, we're using the "since" generator to use the
+    // recency index to select candidate nodes and "fields" to limit the
+    // output to file names only. Then we're using the "expression" term to
+    // further constrain the results.
+    //
+    // The category of transient files that we want to ignore will have a
+    // creation clock (cclock) newer than $time_t value and will also not
+    // currently exist.
+    let response = watchman_query(&json!(
+        [
+            "query",
+            worktree,
+            {
+                "since": time_seconds,
+                "fields": ["name"],
+                "expression": [
+                    "not", [
+                        "allof",[
+                            "since",
+                            time_seconds,
+                            "cclock"
+                        ],
+                        [
+                            "not",
+                            "exists"
+                        ]
+                    ]
+                ]
+            }
+        ]
+    ))?;
+
+    if let Some(err) = response["error"].as_str() {
+        ensure!(
+            err.contains("unable to resolve root") || err.contains("is not watched"),
+            "Watchman failed for an unexpected reason {}",
+            err
+        );
+        add_watch(&worktree)?;
+        // Return the fast "everything is dirty" indication to Git.
+        // This makes subsequent queries much faster since Git will pass Watchman
+        // a timestamp from _after_ it started.
+        // (When Watchman gets a time before its run,
+        // it conservatively says everything has changed.)
+        print!("/\0");
+        return Ok(());
     }
 
     match response["files"].as_array() {
@@ -102,20 +199,38 @@ fn query_watchman(epoch_nanoseconds: u64) -> Fallible<()> {
 
             Ok(())
         }
-        None => bail!("missing file data"),
+        None => bail!("Missing file data in watchman response {:#}", response),
     }
 }
 
-fn add_to_watchman(worktree: &std::path::Path) -> Fallible<()> {
+fn watchman_query(query: &Value) -> Result<Value> {
+    let mut watchman = Command::new("watchman")
+        .args(&["-j", "--no-pretty"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .context("Couldn't start watchman")?;
+
+    watchman
+        .stdin
+        .as_mut()
+        .expect("child Watchman process's stdin isn't piped")
+        .write_all(query.to_string().as_bytes())?;
+
+    let output = watchman
+        .wait_with_output()
+        .context("Failed to wait on watchman query")?
+        .stdout;
+
+    let as_json = serde_json::from_str(std::str::from_utf8(&output)?)?;
+    Ok(as_json)
+}
+
+fn add_watch(worktree: &Path) -> Result<()> {
     eprintln!("Adding {} to Watchman's watch list", worktree.display());
 
     let watchman = Command::new("watchman")
-        .args(&[
-            "watch",
-            worktree
-                .to_str()
-                .expect("Working directory isn't valid Unicode"),
-        ])
+        .args(&[OsStr::new("watch"), worktree.as_os_str()])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -126,41 +241,5 @@ fn add_to_watchman(worktree: &std::path::Path) -> Fallible<()> {
         .context("Failed to wait on `watchman watch`")?;
     ensure!(output.status.success(), "`watchman watch` failed");
 
-    // Return the fast "everything is dirty" indication to Git.
-    // This makes subsequent queries much faster since Git will pass Watchman
-    // a timestamp from _after_ it started.
-    // (When Watchman gets a time before its run,
-    // it conservatively says everything has changed.)
-    print!("/\0");
     Ok(())
-}
-
-// Borrowed lovingly from Burntsushi:
-// https://www.reddit.com/r/rust/comments/8fecqy/can_someone_show_an_example_of_failure_crate_usage/dy2u9q6/
-// Chains errors into a big string.
-fn pretty_error(err: &failure::Error) -> String {
-    let mut pretty = err.to_string();
-    let mut prev = err.as_fail();
-    while let Some(next) = prev.cause() {
-        pretty.push_str(":\n");
-        pretty.push_str(&next.to_string());
-        if let Some(bt) = next.backtrace() {
-            let mut bts = bt.to_string();
-            // If RUST_BACKTRACE is not set, next.backtrace() gives us
-            // Some(bt), but bt.to_string() gives us an empty string.
-            // If we push a newline to the return value and nothing else,
-            // we get something like:
-            // ```
-            // Some errror
-            // :
-            // Its cause
-            // ```
-            if !bts.is_empty() {
-                bts.push_str("\n");
-                pretty.push_str(&bts);
-            }
-        }
-        prev = next;
-    }
-    pretty
 }
