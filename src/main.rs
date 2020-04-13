@@ -33,6 +33,13 @@ fn query_watchman_v2(args: &[String]) -> Result<()> {
 
     let last_update_token = &args[2];
 
+    // Gracefully upgrade repo fsmonitor from v1 timestmap to v2 opaque clock token.
+    let token_value = if let Some('c') = last_update_token.chars().next() {
+        Value::from(last_update_token.to_string())
+    } else {
+        Value::from(last_update_token.parse::<u64>().unwrap_or(0) / 1_000_000_000)
+    };
+
     // From the Perl that ships with Git:
     //
     // In the query expression below we're asking for names of files that
@@ -47,7 +54,7 @@ fn query_watchman_v2(args: &[String]) -> Result<()> {
             "query",
             worktree,
             {
-                "since": last_update_token,
+                "since": token_value,
                 "fields": ["name"],
                 "expression": [
                     "not", [
