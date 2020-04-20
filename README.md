@@ -23,10 +23,6 @@ git config core.fsmonitor rs-git-fsmonitor
 # Install and link packages
 sudo hab pkg install --binlink jgavris/rs-git-fsmonitor
 
-# Ensure service directory exists and is writable
-sudo mkdir -p /hab/svc/watchman/var
-sudo chmod o+rwx /hab/svc/watchman/var
-
 # Configure git repository to use the tool (run in desired large git repository):
 git config --global core.fsmonitor rs-git-fsmonitor
 ```
