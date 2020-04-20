@@ -19,5 +19,5 @@ do_build() {
 }
 
 do_install() {
-  cargo install --root "${pkg_prefix}"
+  cargo install --path . --root "${pkg_prefix}"
 }
