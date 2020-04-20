@@ -21,9 +21,7 @@ git config core.fsmonitor rs-git-fsmonitor
 
 ```bash
 # Install and link packages
-sudo hab pkg install jgavris/rs-git-fsmonitor
-sudo hab pkg binlink jgavris/rs-git-fsmonitor
-sudo hab pkg binlink jarvus/watchman
+sudo hab pkg install --binlink jgavris/rs-git-fsmonitor
 
 # Ensure service directory exists and is writable
 sudo mkdir -p /hab/svc/watchman/var
