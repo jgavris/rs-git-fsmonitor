@@ -11,19 +11,24 @@ pkg_deps=(
   jarvus/watchman
 )
 pkg_build_deps=(
+  core/patchelf
   core/rust
 )
 pkg_bin_dirs=(bin)
 
 do_build() {
-  LD_LIBRARY_PATH="$LD_RUN_PATH" cargo build --release
+  cargo build --release --verbose
 }
 
 do_install() {
-  cargo install --path . --root "${pkg_prefix}"
+  cargo install --path . --root "${pkg_prefix}" --verbose
+
+  pushd "${pkg_prefix}/bin" > /dev/null
+
+  build_line "Patching runpath in rust binary"
+  patchelf --set-interpreter "$(pkg_path_for glibc)/lib/ld-linux-x86-64.so.2" --set-rpath "${LD_RUN_PATH}" "rs-git-fsmonitor"
 
   build_line "Generating wrapper script for portable execution"
-  pushd "${pkg_prefix}/bin" > /dev/null
   mkdir "../bin.real"
   mv -v "rs-git-fsmonitor" "../bin.real/rs-git-fsmonitor"
 
@@ -40,4 +45,9 @@ EOF
   chmod -v 755 "rs-git-fsmonitor"
 
   popd > /dev/null
+}
+
+do_strip() {
+  # skip stripping the rust binary, it breaks it
+  return 0
 }
