@@ -74,6 +74,14 @@ user	0m0.030s
 sys	0m0.026s
 ```
 
+## Uninstallation
+
+```
+git config --unset core.fsmonitor
+```
+
+And then you can remove it from the package manager you used to install it.
+
 ## License
 
 MIT
