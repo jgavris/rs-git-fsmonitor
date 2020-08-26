@@ -4,6 +4,9 @@ A git fsmonitor hook written in Rust.
 
 ## Installation
 
+The heavy lifting of this tool is handled by Facebook's `watchman` utilty, so you will need [watchman](https://facebook.github.io/watchman/docs/install.html) installed.
+The Homebrew and Habitat installers will handle installing this depencency for you, so you will only need to do this if you are building from source.
+
 ### Via Homebrew
 
 [Homebrew](https://brew.sh/) is the recommended way to install in Mac environments:
