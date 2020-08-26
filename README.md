@@ -4,16 +4,37 @@ A git fsmonitor hook written in Rust.
 
 ## Installation
 
-Before you can use this tool, you will need [watchman](https://facebook.github.io/watchman/docs/install.html) installed.
-If you are on OS X, `brew` install will install it for you.
+The heavy lifting of this tool is handled by Facebook's `watchman` utilty, so you will need [watchman](https://facebook.github.io/watchman/docs/install.html) installed.
+The Homebrew and Habitat installers will handle installing this depencency for you, so you will only need to do this if you are building from source.
 
-Install the tool:
+### Via Homebrew
 
-`brew tap jgavris/rs-git-fsmonitor git@github.com:jgavris/rs-git-fsmonitor.git && brew install rs-git-fsmonitor`
+[Homebrew](https://brew.sh/) is the recommended way to install in Mac environments:
 
-Configure git repository to use the tool (run in desired large git repository):
+```bash
+brew tap jgavris/rs-git-fsmonitor https://github.com/jgavris/rs-git-fsmonitor.git && brew install rs-git-fsmonitor
 
-`git config core.fsmonitor rs-git-fsmonitor`
+# Configure git repository to use the tool (run in desired large git repository):
+git config core.fsmonitor rs-git-fsmonitor
+```
+
+### Via Habitat
+
+[Habitat](https://habitat.sh) is the recommended way to install in Linux environments:
+
+```bash
+# Install and link packages
+sudo hab pkg install jgavris/rs-git-fsmonitor
+sudo hab pkg binlink jgavris/rs-git-fsmonitor
+sudo hab pkg binlink jarvus/watchman
+
+# Ensure service directory exists and is writable
+sudo mkdir -p /hab/svc/watchman/var
+sudo chmod o+rwx /hab/svc/watchman/var
+
+# Configure git repository to use the tool (run in desired large git repository):
+git config --global core.fsmonitor rs-git-fsmonitor
+```
 
 ## Purpose
 
@@ -55,6 +76,14 @@ real	0m0.067s
 user	0m0.030s
 sys	0m0.026s
 ```
+
+## Uninstallation
+
+```
+git config --unset core.fsmonitor
+```
+
+And then you can remove it from the package manager you used to install it.
 
 ## License
 
