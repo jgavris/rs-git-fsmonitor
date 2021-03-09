@@ -24,7 +24,7 @@ git config core.fsmonitor rs-git-fsmonitor
 
 ```bash
 # Install and link packages
-sudo hab pkg install --binlink jgavris/rs-git-fsmonitor
+sudo hab pkg install --binlink jgavris/rs-git-fsmonitor --channel unstable
 
 # Configure git repository to use the tool (run in desired large git repository):
 git config core.fsmonitor rs-git-fsmonitor
