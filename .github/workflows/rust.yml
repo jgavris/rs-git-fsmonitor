@@ -1,15 +1,20 @@
 name: Rust
 
-on: [push]
+on: [push, pull_request]
 
 jobs:
   build:
-
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macOS-latest, ubuntu-latest]
 
     steps:
     - uses: actions/checkout@v2
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
+
+    - name: Run Tests
       run: cargo test --verbose
+
+    - name: Build Release
+      run: cargo build --release
