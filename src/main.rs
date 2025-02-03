@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use anyhow::*;
+use anyhow::{anyhow, bail, ensure, Context as _, Result};
 use serde_json::{json, Value};
 
 fn main() -> Result<()> {
@@ -34,7 +34,7 @@ fn query_watchman_v2(args: &[String]) -> Result<()> {
     let last_update_token = &args[2];
 
     // Gracefully upgrade repo fsmonitor from v1 timestmap to v2 opaque clock token.
-    let token_value = if let Some('c') = last_update_token.chars().next() {
+    let token_value = if last_update_token.starts_with('c') {
         Value::from(last_update_token.to_string())
     } else {
         Value::from(last_update_token.parse::<u64>().unwrap_or(0) / 1_000_000_000)
@@ -82,7 +82,7 @@ fn query_watchman_v2(args: &[String]) -> Result<()> {
         // a timestamp from _after_ it started.
         // (When Watchman gets a time before its run,
         // it conservatively says everything has changed.)
-        print!("{}\0/\0", clock_id);
+        print!("{clock_id}\0/\0");
         return Ok(());
     }
 
@@ -92,10 +92,10 @@ fn query_watchman_v2(args: &[String]) -> Result<()> {
 
     match response["files"].as_array() {
         Some(files) => {
-            print!("{}\0", new_clock_id);
+            print!("{new_clock_id}\0");
             for file in files {
                 if let Some(filename) = file.as_str() {
-                    print!("{}\0", filename);
+                    print!("{filename}\0");
                 }
             }
 
@@ -108,7 +108,7 @@ fn query_watchman_v2(args: &[String]) -> Result<()> {
 /// Calls `watchman clock` on the Git directory and returns the provided ID.
 fn watchman_clock(worktree: &Path) -> Result<String> {
     let watchman = Command::new("watchman")
-        .args(&[OsStr::new("clock"), worktree.as_os_str()])
+        .args([OsStr::new("clock"), worktree.as_os_str()])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -121,14 +121,14 @@ fn watchman_clock(worktree: &Path) -> Result<String> {
 
     let response: Value = serde_json::from_str(std::str::from_utf8(&output)?)?;
 
-    if let Some(clock_id) = response["clock"].as_str() {
-        Ok(String::from(clock_id))
-    } else {
-        Err(anyhow!(
-            "`watchman clock` didn't provide a clock ID in response {:#}",
-            response
-        ))
-    }
+    response["clock"].as_str().map_or_else(
+        || {
+            Err(anyhow!(
+                "`watchman clock` didn't provide a clock ID in response {response:#}"
+            ))
+        },
+        |clock_id| Ok(String::from(clock_id)),
+    )
 }
 
 /// V1 of the API takes a time of elapsed nanoseconds since the POSIX epoch,
@@ -200,7 +200,7 @@ fn query_watchman_v1(args: &[String]) -> Result<()> {
         Some(files) => {
             for file in files {
                 if let Some(filename) = file.as_str() {
-                    print!("{}\0", filename);
+                    print!("{filename}\0");
                 }
             }
 
@@ -212,7 +212,7 @@ fn query_watchman_v1(args: &[String]) -> Result<()> {
 
 fn watchman_query(query: &Value) -> Result<Value> {
     let mut watchman = Command::new("watchman")
-        .args(&["-j", "--no-pretty"])
+        .args(["-j", "--no-pretty"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -237,7 +237,7 @@ fn add_watch(worktree: &Path) -> Result<()> {
     eprintln!("Adding {} to Watchman's watch list", worktree.display());
 
     let watchman = Command::new("watchman")
-        .args(&[OsStr::new("watch"), worktree.as_os_str()])
+        .args([OsStr::new("watch"), worktree.as_os_str()])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
