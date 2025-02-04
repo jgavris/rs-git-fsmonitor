@@ -1,4 +1,5 @@
 use std::env;
+use std::fmt::Write;
 
 use anyhow::{bail, ensure, Context as _, Result};
 use watchman_client::prelude::*;
@@ -65,25 +66,23 @@ async fn query_watchman_v2(client: Client, root: &ResolvedRoot, args: &[String])
         .await;
 
     if let Ok(result) = result {
-        match result.files {
-            Some(files) => {
-                let clock = match result.clock {
-                    Clock::Spec(ClockSpec::StringClock(string)) => Some(string),
-                    _ => None,
-                }
-                .unwrap_or_default();
+        let files = result
+            .files
+            .context("Missing file data in watchman response")?;
 
-                print!("{clock}\0");
-                for file in files {
-                    if let Some(filename) = file.name.to_str() {
-                        print!("{filename}\0");
-                    }
-                }
-
-                Ok(())
-            }
-            _ => bail!("Missing file data in watchman response {result:#?}"),
+        let clock = match result.clock {
+            Clock::Spec(ClockSpec::StringClock(string)) => Some(string),
+            _ => None,
         }
+        .unwrap_or_default();
+
+        let output = files.iter().fold(format!("{clock}\0"), |mut acc, file| {
+            if let Some(filename) = file.name.to_str() {
+                write!(acc, "{filename}\0").unwrap();
+            }
+            acc
+        });
+        print!("{output}");
     } else {
         // Start a watch, then get the clock ID.
         let clock = match client.clock(root, SyncTimeout::Default).await? {
@@ -91,14 +90,16 @@ async fn query_watchman_v2(client: Client, root: &ResolvedRoot, args: &[String])
             ClockSpec::UnixTimestamp(_) => None,
         }
         .unwrap_or_default();
+
         // Return the fast "everything is dirty" indication to Git.
         // This makes subsequent queries much faster since Git will pass Watchman
         // a timestamp from _after_ it started.
         // (When Watchman gets a time before its run,
         // it conservatively says everything has changed.)
         print!("{clock}\0/\0");
-        Ok(())
     }
+
+    Ok(())
 }
 
 /// V1 of the API takes a time of elapsed nanoseconds since the POSIX epoch,
@@ -139,29 +140,35 @@ async fn query_watchman_v1(client: Client, root: &ResolvedRoot, args: &[String])
         .await;
 
     match result {
-        Ok(result) => match result.files {
-            Some(files) => {
-                for file in files {
-                    if let Some(filename) = file.name.to_str() {
-                        print!("{filename}\0");
-                    }
+        Ok(result) => {
+            let files = result
+                .files
+                .context("Missing file data in watchman response")?;
+
+            let output = files.iter().fold(String::default(), |mut acc, file| {
+                if let Some(filename) = file.name.to_str() {
+                    write!(acc, "{filename}\0").unwrap();
                 }
-                Ok(())
-            }
-            _ => bail!("Missing file data in watchman response {result:#?}"),
-        },
+                acc
+            });
+            print!("{output}");
+
+            Ok(())
+        }
         Err(WatchmanError::WatchmanResponseError { message }) => {
             ensure!(
                 message.contains("unable to resolve root") || message.contains("is not watched"),
                 "Watchman failed for an unexpected reason {}",
                 message
             );
+
             // Return the fast "everything is dirty" indication to Git.
             // This makes subsequent queries much faster since Git will pass Watchman
             // a timestamp from _after_ it started.
             // (When Watchman gets a time before its run,
             // it conservatively says everything has changed.)
             print!("/\0");
+
             Ok(())
         }
         Err(err) => bail!(err),
