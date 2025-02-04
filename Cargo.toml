@@ -23,4 +23,7 @@ watchman_client = "0.9.0"
 opt-level = 0
 
 [profile.release]
+codegen-units = 1
+lto = true
 opt-level = 3
+strip = true
